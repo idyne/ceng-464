@@ -3,7 +3,7 @@ import builtins
 import string
 import time
 import warnings
-from collections import Counter
+from collections import Counter, OrderedDict
 from multiprocessing import Process, freeze_support
 
 import nltk
@@ -70,6 +70,7 @@ def create_data_frame_of_texts(texts):
 
 # region Part A
 def clean_texts(data):
+    print("Clean Text Data")
     lemmatizer = WordNetLemmatizer()
     stop_words = stopwords.words('english')
 
@@ -87,6 +88,7 @@ def clean_texts(data):
 # region Part B
 # region Part B.1
 def extract_features(data):
+    print("Extract General Features")
     feature_df = pd.DataFrame({})
     positive_words = ["amazing", "excellent", "exceptional", "fantastic", "great", "impressive", "marvelous",
                       "outstanding", "remarkable", "sensational", "superb", "terrific", "wonderful", "delightful",
@@ -143,6 +145,7 @@ def extract_features(data):
 # region Part B.2
 
 def create_bag_of_words(data):
+    print("Create Bag of Words")
     bag_of_words_model = CountVectorizer()
     bag_of_word_df = pd.DataFrame(bag_of_words_model.fit_transform(data['cleaned_text']).todense())
     bag_of_word_df.columns = sorted(bag_of_words_model.vocabulary_)
@@ -150,19 +153,37 @@ def create_bag_of_words(data):
 
 
 def create_tfidf(data):
+    print("Create TF-IDF")
     tfidf_model = TfidfVectorizer()
     tfidf_df = pd.DataFrame(tfidf_model.fit_transform(data['cleaned_text']).todense())
     tfidf_df.columns = sorted(tfidf_model.vocabulary_)
     return tfidf_df
 
 
+def compare_10_most_frequently_occuring_words(data):
+    print("Compare 10 Most Frequently Occuring Words")
+    bag_of_words_model = CountVectorizer(max_features=10)
+    bag_of_word_df = pd.DataFrame(bag_of_words_model.fit_transform(data['cleaned_text']).todense())
+    bag_of_word_df.columns = sorted(bag_of_words_model.vocabulary_)
+    tfidf_model = TfidfVectorizer(max_features=10)
+    tfidf_df = pd.DataFrame(tfidf_model.fit_transform(data['cleaned_text']).todense())
+    tfidf_df.columns = sorted(tfidf_model.vocabulary_)
+    rw = 3
+    print("Most frequently occured words in row 3 BoW:",
+          list(bag_of_word_df.columns[bag_of_word_df.iloc[rw, :] == bag_of_word_df.iloc[rw, :].max()]))
+    print("Most frequently occured words in row 3 TF-IDF:",
+          list(tfidf_df.columns[tfidf_df.iloc[rw, :] == tfidf_df.iloc[rw, :].max()]))
+    print("Word 'even' occurs in", bag_of_word_df[bag_of_word_df['even'] != 0].shape[0], "documents")
+    print("Word 'one' occurs in", bag_of_word_df[bag_of_word_df['one'] != 0].shape[0], "documents")
+
+
 # endregion
 
 # region Part B.3
 def show_word_cloud(data, bag_of_word_df):
+    print("Show Word Cloud")
     from wordcloud import WordCloud, STOPWORDS
     word_frequencies = {}
-    sorted_words_by_frequency = []
     for key in bag_of_word_df.keys():
         word_frequencies[key] = bag_of_word_df[key].values.sum()
     other_stopwords_to_remove = ['\\n', 'n', '\\', '>', 'nLines', 'nI', "n'"]
@@ -228,6 +249,7 @@ def clf_model_evaluation(actual_values, predicted_values, predicted_probabilitie
 
 
 def do_kmeans_clustering(data, tfidf_df):
+    print("K-means Clustering")
     kmeans = KMeans(n_clusters=13)
     kmeans.fit(tfidf_df)
     y_kmeans = kmeans.predict(tfidf_df)
@@ -252,12 +274,14 @@ def do_kmeans_clustering(data, tfidf_df):
 
 
 def do_linear_regression(y_train, X_train, X_valid, y_valid):
+    print("Linear Regression")
     linreg = LinearRegression()
     result = reg_model(linreg, X_train, y_train, X_valid)
     reg_model_evaluation(y_valid, result)
 
 
-def do_random_forest_regression(y_train, X_train, X_valid, y_valid):
+def do_random_forest_classification(y_train, X_train, X_valid, y_valid):
+    print("Random Forest Classification")
     from sklearn.ensemble import RandomForestClassifier
     rfc = RandomForestClassifier(n_estimators=20, max_depth=4, max_features='sqrt', random_state=1)
     results = clf_model(rfc, X_train, y_train, X_valid)
@@ -268,6 +292,7 @@ def do_random_forest_regression(y_train, X_train, X_valid, y_valid):
 
 
 def do_logistic_regression(y_train, X_train, X_valid, y_valid):
+    print("Logistic Regression")
     from sklearn.linear_model import LogisticRegression
     logreg = LogisticRegression()
     results = clf_model(logreg, X_train, y_train, X_valid)
@@ -279,6 +304,7 @@ def do_logistic_regression(y_train, X_train, X_valid, y_valid):
 
 # region Part C
 def do_topic_modeling(data):
+    print("Topic Modeling")
     from gensim import corpora
     from gensim.models.ldamodel import LdaModel
     from gensim.parsing.preprocessing import preprocess_string
@@ -331,6 +357,7 @@ def do_topic_modeling(data):
 
 
 def do_text_summarization(data):
+    print("Text Summarization")
     start = time.time()
     GLOVE_DIR = 'data/glove/'
     GLOVE_ZIP = GLOVE_DIR + 'glove.6B.50d.zip'
@@ -454,6 +481,7 @@ def do_text_summarization(data):
 
 # region Part E
 def train_sentiment_model(data):
+    print("Train Sentiment Model")
     model_data = data.copy()
     tfidf = TfidfVectorizer(strip_accents=None, preprocessor=None, lowercase=False)
     log_reg = LogisticRegression(random_state=0, solver='lbfgs')
@@ -471,17 +499,38 @@ def main():
     initialize()
     neg_texts, pos_texts = read_files()
     data = create_data_frame_of_texts(neg_texts + pos_texts)
+    # Part A
+    print("Part A")
     clean_texts(data)
-
-    """
+    # Part B.1
+    print("Part B.1")
+    feature_df = extract_features(data)
+    # Part B.2
+    print("Part B.2")
+    compare_10_most_frequently_occuring_words(data)
     bow_df = create_bag_of_words(data)
     tfidf_df = create_tfidf(data)
-    feature_df = extract_features(data)
-
+    # Part B.3
+    print("Part B.3")
+    show_word_cloud(data, bow_df)
+    # Part B.4
+    print("Part B.4")
     X_train, X_valid, y_train, y_valid = train_test_split(feature_df, data['sentiment'], test_size=0.2, random_state=42,
                                                           stratify=data['sentiment'])
-    """
-    train_sentiment_model(data)  # do_text_summarization(data)
+    do_kmeans_clustering(data, tfidf_df)
+    do_linear_regression(y_train, X_train, X_valid, y_valid)
+    do_logistic_regression(y_train, X_train, X_valid, y_valid)
+    do_random_forest_classification(y_train, X_train, X_valid, y_valid)
+    # Part C
+    print("Part C")
+    do_topic_modeling(data)
+    # Part D
+    print("Part D")
+    # text summarization takes about 6 minutes. you can uncomment it if you want.
+    # do_text_summarization(data)
+    # Part E
+    print("Part E")
+    train_sentiment_model(data)
 
 
 # We used this method to solve a problem occurred in topic modeling that appears on Windows OS
