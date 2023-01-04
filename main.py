@@ -1,7 +1,9 @@
 # region Imports
 import builtins
 import string
+import time
 import warnings
+from collections import Counter
 from multiprocessing import Process, freeze_support
 
 import nltk
@@ -75,6 +77,8 @@ def clean_texts(data):
     data['cleaned_text'] = data['text'].apply(lambda x: ' '.join(
         [lemmatizer.lemmatize(word.lower()) for word in word_tokenize(re.sub(r'([^\s\w]|_)+', ' ', str(x))) if
          word.lower() not in stop_words]))
+    data['sentences'] = data["text"].apply(lambda x: sent_tokenize(x))
+    data['words'] = data["cleaned_text"].apply(lambda x: word_tokenize(x))
     return data
 
 
@@ -84,28 +88,52 @@ def clean_texts(data):
 # region Part B.1
 def extract_features(data):
     feature_df = pd.DataFrame({})
-    # ii) number of punctations
-    feature_df['num_of_unique_punctuations'] = data['text'].apply(
-        lambda x: len(set(x).intersection(set(string.punctuation))))
+    positive_words = ["amazing", "excellent", "exceptional", "fantastic", "great", "impressive", "marvelous",
+                      "outstanding", "remarkable", "sensational", "superb", "terrific", "wonderful", "delightful",
+                      "enjoyable", "entertaining", "good", "fun", "hilarious", "humorous", "lively", "pleasing",
+                      "refreshing", "thrilling", "uplifting", "clever", "creative", "imaginative", "inventive",
+                      "inspiring", "innovative", "masterful", "original", "skilful", "talented", "touching",
+                      "heartwarming", "poignant", "moving", "tender", "thought-provoking", "deep", "intellectual",
+                      "profound", "reflective", "stimulating", "substantial", "meaningful", "rich", "significant",
+                      "thoughtful"]
 
-    # iii) number of capital and small letter words
-    feature_df['number_of_capital_words'] = data['text'].apply(
-        lambda x: len([word for word in word_tokenize(str(x)) if word[0].isupper()]))
+    negative_words = ["awful", "bad", "boring", "disturbing", "disappointing", "dreadful", "mediocre", "poor",
+                      "terrible", "unsatisfying", "average", "bland", "commonplace", "disappointing", "dull", "flat",
+                      "forgettable", "inferior", "lacklustre", "lifeless", "miserable", "ordinary", "pathetic", "poor",
+                      "routine", "tedious", "uninspired", "unremarkable", "unsatisfactory", "weak", "abysmal",
+                      "terrible", "atrocious", "awful", "dreadful", "painful", "appalling", "despicable", "horrible",
+                      "shocking", "sadly", "abhorrent", "loathsome", "repugnant", "vulgar", "disgusting", "offending",
+                      "repulsive", "distasteful", "obscene", "unappealing", "unattractive"]
 
-    feature_df['number_of_small_words'] = data['text'].apply(
-        lambda x: len([word for word in word_tokenize(str(x)) if word[0].islower()]))
+    personal_pronouns = ["I", "me", "my", "mine", "we", "us", "our", "ours", "you", "your", "yours", "he", "him", "his",
+                         "she", "her", "hers", "it", "its", "they", "them", "their", "theirs"]
 
-    # iv) number of alphabets
-    feature_df['number_of_alphabets'] = data['text'].apply(lambda x: len([ch for ch in str(x) if ch.isalpha()]))
+    persuasive_words = ["fantastic", "terrible", "absolutely", "completely", "because", "therefore", "hence",
+                        "as a result", "fair", "just", "important", "beneficial", "research shows",
+                        "studies have found", "data suggests", "however", "but", "despite", "nevertheless", "we", "our",
+                        "us", "must", "will", "always", "never", "right", "wrong", "fair", "unfair", "everybody",
+                        "nobody", "all", "none"]
 
-    # v) number of digits
-    feature_df['number_of_digits'] = data['text'].apply(lambda x: len([ch for ch in str(x) if ch.isdigit()]))
+    def count_common_elements(list1, list2):
+        result = 0
+        for element in list1:
+            if element in list2:
+                result += 1
+        return result
 
-    # vi) number of words
-    feature_df['number_of_words'] = data['text'].apply(lambda x: len(word_tokenize(str(x))))
+    # i) number of persuasive words
+    feature_df['num_of_persuasive_words'] = data['text'].apply(
+        lambda x: count_common_elements(word_tokenize(x), persuasive_words))
 
-    # vii) number of white spaces for each sentence
-    feature_df['number_of_white_spaces'] = data['text'].apply(lambda x: len(str(x).split(' ')) - 1)
+    # ii) number of positive words
+    feature_df['num_of_positive_words'] = data['cleaned_text'].apply(
+        lambda x: count_common_elements(word_tokenize(x), positive_words))
+    # iii) number of negative words
+    feature_df['num_of_negative_words'] = data['cleaned_text'].apply(
+        lambda x: count_common_elements(word_tokenize(x), negative_words))
+
+    # iv) length
+    feature_df['length'] = data['text'].apply(lambda x: len(str(x)))
 
     return feature_df
 
@@ -168,8 +196,11 @@ def reg_model(model_type, X_train, y_train, X_valid):
 
 
 def reg_model_evaluation(actual_values, predicted_values):
-    from sklearn.metrics import mean_squared_error
+    from sklearn.metrics import mean_squared_error, r2_score
     from math import sqrt
+    r2 = r2_score(actual_values, predicted_values)
+    print("\naccuracy: ", r2)
+    print()
     rms = sqrt(mean_squared_error(actual_values, predicted_values))
     print('Root Mean Squared Error (RMSE) is:', rms)
     # Evaluate the model using the mean absolute error
@@ -252,7 +283,7 @@ def do_topic_modeling(data):
     from gensim.models.ldamodel import LdaModel
     from gensim.parsing.preprocessing import preprocess_string
 
-    texts = data.text.apply(preprocess_string).tolist()
+    texts = data.words.tolist()
 
     dictionary = corpora.Dictionary(texts)
 
@@ -274,6 +305,11 @@ def do_topic_modeling(data):
     min_topics, max_topics = 5, 15
     coherence_scores = list(get_coherence_values(min_topics, max_topics))
 
+    NUM_TOPICS = min_topics + coherence_scores.index(max(coherence_scores))
+    ldamodel = LdaModel(corpus, num_topics=NUM_TOPICS, id2word=dictionary, passes=15)
+
+    print(ldamodel.print_topics(num_words=6))
+
     import matplotlib.style as style
 
     style.use('fivethirtyeight')
@@ -293,12 +329,15 @@ def do_topic_modeling(data):
 
 # region Part D
 
+
 def do_text_summarization(data):
+    start = time.time()
     GLOVE_DIR = 'data/glove/'
     GLOVE_ZIP = GLOVE_DIR + 'glove.6B.50d.zip'
     zip_ref = zipfile.ZipFile(GLOVE_ZIP, 'r')
     zip_ref.extractall(GLOVE_DIR)
     zip_ref.close()
+    CLEAN_PATTERN = r'[^a-zA-z\s]'
 
     def load_glove_vectors(fn):
         print("Loading Glove Model")
@@ -313,7 +352,6 @@ def do_text_summarization(data):
         return model
 
     glove_vectors = load_glove_vectors('data/glove/glove.6B.50d.txt')
-    CLEAN_PATTERN = r'[^a-zA-z\s]'
 
     def clean(word):
         return re.sub(CLEAN_PATTERN, '', word)
@@ -341,17 +379,17 @@ def do_text_summarization(data):
     def fix_contractions(sentences):
         return [contractions.fix(sentence) for sentence in sentences]
 
-    data['SentencesInArticle'] = data["text"].apply(sent_tokenize)
+    data['SentencesInArticle'] = data["sentences"]
     data['WordsInSentences'] = data.SentencesInArticle.apply(fix_contractions).apply(lower).apply(tokenize_words).apply(
         remove_stopwords).apply(clean_sentences)
 
-    data = data[['SentencesInArticle', 'WordsInSentences']]
+    data = data[['sentiment', 'SentencesInArticle', 'WordsInSentences']]
 
     VECTOR_SIZE = 50
     EMPTY_VECTOR = np.zeros(VECTOR_SIZE)
 
     def sentence_vector(sentence):
-        if (len(sentence) != 0):
+        if len(sentence) != 0:
             result = builtins.sum([glove_vectors.get(word, EMPTY_VECTOR) for word in sentence]) / len(sentence)
         else:
             result = builtins.sum([glove_vectors.get(word, EMPTY_VECTOR) for word in "empty sentence"]) / 2
@@ -374,9 +412,12 @@ def do_text_summarization(data):
     data['SimMatrix'] = data['SentenceVector'].apply(similarity_matrix)
 
     def compute_graph(sim_matrix):
-        nx_graph = nx.from_numpy_array(sim_matrix)
-        scores = nx.pagerank(nx_graph)
-        return scores
+        try:
+            nx_graph = nx.from_numpy_array(sim_matrix)
+            scores = nx.pagerank(nx_graph)
+            return scores
+        except:
+            return {}
 
     data['Graph'] = data.SimMatrix.apply(compute_graph)
 
@@ -385,37 +426,43 @@ def do_text_summarization(data):
         top_n_sentences = [sentence for score, sentence in top_scores[:n]]
         return " ".join(top_n_sentences)
 
-    data['Summary'] = data.apply(lambda d: get_ranked_sentences(d.SentencesInArticle, d.Graph), axis=1)
+    def summarize(d):
+        if d.Graph == {}:
+            return ""
+        return get_ranked_sentences(d.SentencesInArticle, d.Graph)
+
+    data['Summary'] = data.apply(summarize, axis=1)
     with open("summarized_texts/neg_summarized.txt", "a+") as f:
-        f.write(data.loc[0].Summary)
+        f.seek(0)
+        f.truncate()
+        for i, row in data.iterrows():
+            if row["sentiment"] == 0:
+                f.write(row["Summary"].replace('\n', ' ') + "\n")
+        f.close()
     with open("summarized_texts/pos_summarized.txt", "a+") as f:
-        f.write(data.loc[1].Summary)
+        f.seek(0)
+        f.truncate()
+        for i, row in data.iterrows():
+            if row["sentiment"] == 1:
+                f.write(row["Summary"].replace('\n', ' ') + "\n")
+        f.close()
+    end = time.time()
+    print(end - start, "seconds")
 
 
 # endregion
 
 # region Part E
 def train_sentiment_model(data):
-    COLUMN_NAMES = ['text', 'sentiment']
-
-    def clean(text):
-        text = re.sub(r'[\W]+', ' ', text.lower())
-        text = text.replace('hadn t', 'had not').replace('wasn t', 'was not').replace('didn t', 'did not')
-        return text
-
-    print(data.sentiment.value_counts())
     model_data = data.copy()
-    model_data.Review = model_data.text.apply(clean)
     tfidf = TfidfVectorizer(strip_accents=None, preprocessor=None, lowercase=False)
     log_reg = LogisticRegression(random_state=0, solver='lbfgs')
     log_tfidf = Pipeline([('vect', tfidf), ('clf', log_reg)])
-    X_train, X_test, y_train, y_test = train_test_split(model_data.text, model_data.sentiment, test_size=0.2,
+    X_train, X_test, y_train, y_test = train_test_split(model_data.cleaned_text, model_data.sentiment, test_size=0.2,
                                                         random_state=42)
-
     log_tfidf.fit(X_train.values, y_train.values)
     test_accuracy = log_tfidf.score(X_test.values, y_test.values)
     print('The model has a test accuracy of {:.0%}'.format(test_accuracy))
-    print(log_tfidf.predict(['I hated this place', 'I loved this place']))
 
 
 # endregion
@@ -426,25 +473,18 @@ def main():
     data = create_data_frame_of_texts(neg_texts + pos_texts)
     clean_texts(data)
 
-    def get_sentences():
-        sentences_dict = {"text": [], "sentiment": []}
-        for i in range(2000):
-            sentences = sent_tokenize(data.loc[i]["text"])
-            sentences_dict["text"].extend(sentences)
-            for j in range(len(sentences)):
-                sentences_dict["sentiment"].append(data.loc[i]["sentiment"])
-        return pd.DataFrame(sentences_dict)
-
+    """
+    bow_df = create_bag_of_words(data)
     tfidf_df = create_tfidf(data)
     feature_df = extract_features(data)
-    print(feature_df.head())
-    X_train, X_valid, y_train, y_valid = train_test_split(tfidf_df, data['sentiment'], test_size=0.2, random_state=42,
+
+    X_train, X_valid, y_train, y_valid = train_test_split(feature_df, data['sentiment'], test_size=0.2, random_state=42,
                                                           stratify=data['sentiment'])
+    """
+    train_sentiment_model(data)  # do_text_summarization(data)
 
-    do_text_summarization(data.sample(5))
 
-
-# We used this method to solve a problem occured in topic modeling that appears on Windows OS
+# We used this method to solve a problem occurred in topic modeling that appears on Windows OS
 if __name__ == '__main__':
     freeze_support()
     Process(target=main).start()
